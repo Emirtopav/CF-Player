@@ -1,0 +1,49 @@
+{
+  "Files": [
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\obj\\Debug\\net9.0-ios\\iossimulator-x64\\scopedcss\\bundle\\MusicPlayer.styles.css",
+      "PackagePath": "staticwebassets\\MusicPlayer.styles.css"
+    },
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\wwwroot\\css\\app.css",
+      "PackagePath": "staticwebassets\\css\\app.css"
+    },
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\wwwroot\\css\\bootstrap\\bootstrap.min.css",
+      "PackagePath": "staticwebassets\\css\\bootstrap\\bootstrap.min.css"
+    },
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\wwwroot\\css\\bootstrap\\bootstrap.min.css.map",
+      "PackagePath": "staticwebassets\\css\\bootstrap\\bootstrap.min.css.map"
+    },
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\wwwroot\\index.html",
+      "PackagePath": "staticwebassets\\index.html"
+    },
+    {
+      "Id": "C:\\Users\\emirt\\Pictures\\ai\\MusicPlayer\\wwwroot\\js\\player.js",
+      "PackagePath": "staticwebassets\\js\\player.js"
+    },
+    {
+      "Id": "obj\\Debug\\net9.0-ios\\iossimulator-x64\\staticwebassets\\msbuild.MusicPlayer.Microsoft.AspNetCore.StaticWebAssetEndpoints.props",
+      "PackagePath": "build\\Microsoft.AspNetCore.StaticWebAssetEndpoints.props"
+    },
+    {
+      "Id": "obj\\Debug\\net9.0-ios\\iossimulator-x64\\staticwebassets\\msbuild.MusicPlayer.Microsoft.AspNetCore.StaticWebAssets.props",
+      "PackagePath": "build\\Microsoft.AspNetCore.StaticWebAssets.props"
+    },
+    {
+      "Id": "obj\\Debug\\net9.0-ios\\iossimulator-x64\\staticwebassets\\msbuild.build.MusicPlayer.props",
+      "PackagePath": "build\\MusicPlayer.props"
+    },
+    {
+      "Id": "obj\\Debug\\net9.0-ios\\iossimulator-x64\\staticwebassets\\msbuild.buildMultiTargeting.MusicPlayer.props",
+      "PackagePath": "buildMultiTargeting\\MusicPlayer.props"
+    },
+    {
+      "Id": "obj\\Debug\\net9.0-ios\\iossimulator-x64\\staticwebassets\\msbuild.buildTransitive.MusicPlayer.props",
+      "PackagePath": "buildTransitive\\MusicPlayer.props"
+    }
+  ],
+  "ElementsToRemove": []
+}

@@ -1,0 +1,3 @@
+C:\Users\emirt\Pictures\ai\MusicPlayer\bin\Release\net9.0-android\publish\com.companyname.musicplayer-Signed.apk
+C:\Users\emirt\Pictures\ai\MusicPlayer\bin\Release\net9.0-android\publish\com.companyname.musicplayer.apk
+C:\Users\emirt\Pictures\ai\MusicPlayer\bin\Release\net9.0-android\publish\_Microsoft.Android.Resource.Designer.dll

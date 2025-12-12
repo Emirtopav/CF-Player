@@ -1,0 +1,899 @@
+﻿@page "/"
+@using Microsoft.Maui.Storage
+@using MusicPlayer.Helpers
+@inject IJSRuntime JS
+
+<!-- Modal Overlay (Shared for Settings & EQ) -->
+<div class="modal-overlay @(ActiveModal != null ? "active" : "")" @onclick="CloseModal">
+    <div class="modal-content" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <span>@ActiveModalTitle</span>
+            <span class="modal-close" @onclick="CloseModal">&times;</span>
+        </div>
+        
+        @if(ActiveModal == "Settings")
+        {
+            <div class="setting-item">
+                <span class="setting-label">Light Theme</span>
+                <label class="switch">
+                    <input type="checkbox" checked="@IsLightTheme" @onchange="ToggleTheme">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Mini Player Mode</span>
+                 <button class="playlist-item" @onclick="ToggleMiniMode" style="width: auto; padding: 5px 15px;">
+                    Toggle
+                </button>
+            </div>
+             <div class="setting-item">
+                <span class="setting-label">About</span>
+                <span style="color:var(--text-secondary);">v1.3 (Pro Audio)</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Geliştirici</span>
+                <span style="color:var(--text-secondary);">EmirTopay</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Tasarım</span>
+                <span style="color:var(--text-secondary);">EmirTopay</span>
+            </div>
+        }
+        else if (ActiveModal == "Equalizer")
+        {
+            <div class="eq-container">
+                @for(int i=0; i<EqBands.Length; i++)
+                {
+                    var index = i; // Closure capture
+                    <div class="eq-band">
+                        <input type="range" class="vertical-slider" min="-12" max="12" step="1" 
+                               value="@EqBands[index]" 
+                               @oninput="@(e => UpdateEq(index, e))" />
+                        <span class="eq-label">@GetEqLabel(index)</span>
+                    </div>
+                }
+            </div>
+            <div style="text-align:center; margin-top:10px;">
+                <button class="playlist-item" @onclick="ResetEq" style="width:auto; display:inline-block; padding:5px 20px;">Reset</button>
+            </div>
+        }
+        }
+        else if (ActiveModal == "Playlists")
+        {
+             <div class="playlist-manager">
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <input type="text" @bind="NewPlaylistName" placeholder="New Playlist Name" class="search-input" />
+                    <button class="playlist-item" @onclick="SaveCurrentPlaylist" style="width:auto;">Save</button>
+                </div>
+                
+                <div style="font-weight:600; margin-bottom:10px; color:var(--text-secondary);">Saved Playlists</div>
+                <div style="max-height: 300px; overflow-y:auto;">
+                    @foreach(var pName in SavedPlaylists)
+                    {
+                        <div class="setting-item">
+                            <span>@pName</span>
+                            <div style="display:flex; gap:10px;">
+                                <button class="playlist-item" style="padding:5px 10px;" @onclick="() => LoadNamedPlaylist(pName)">Load</button>
+                                <button class="playlist-item" style="padding:5px 10px; color:var(--accent-color);" @onclick="() => DeletePlaylist(pName)"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+                    }
+                    @if(SavedPlaylists.Count == 0) { <div style="opacity:0.5; text-align:center;">No saved playlists</div> }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+
+
+<!-- ... existing drag overlay ... -->
+<div class="drag-overlay" id="dragZone">
+    <div class="drop-message">Drop Music Here</div>
+</div>
+
+<div class="album-art-bg-layer" style="@(CoverImageSrc != null ? $"background-image: url('{CoverImageSrc}');" : "")"></div>
+
+@if(IsMiniMode)
+{
+    <!-- Compact Mini Player Design (450x450) -->
+    <div class="mini-player-container">
+        <!-- Top: Album Art -->
+        <div class="mini-art" style="@(CoverImageSrc != null ? $"background-image: url('{CoverImageSrc}');" : "")">
+             @if (CoverImageSrc == null) { <div class="mini-art-placeholder"><i class="fa-solid fa-music"></i></div> }
+        </div>
+
+        <!-- Bottom: White Control Area -->
+        <div class="mini-controls-area">
+            <!-- Row 1: Time & Seek -->
+            <div class="mini-seek-row">
+                 <span class="mini-time" style="width:35px; text-align:right;">@FormatTime(CurrentTime)</span>
+                 <div class="mini-seek-bar">
+                     <input type="range" min="0" max="@Duration" value="@CurrentTime" @oninput="Seek" />
+                 </div>
+                 <span class="mini-time" style="width:35px;">-@FormatTime(Duration - CurrentTime)</span>
+            </div>
+            
+            <!-- Row 2: Controls -->
+            <div class="mini-buttons-row">
+                 <i class="fa-solid @(IsMuted ? "fa-volume-xmark" : "fa-volume-high") mini-icon" @onclick="ToggleMute"></i>
+                 <i class="fa-solid fa-gear mini-icon" @onclick='() => OpenModal("Settings")'></i>
+                 
+                 <div class="mini-transport">
+                     <i class="fa-solid fa-backward-step mini-icon-lg" @onclick="PrevTrack"></i>
+                     <i class="fa-solid @(IsPlaying ? "fa-pause" : "fa-play") mini-icon-xl" @onclick="TogglePlay"></i>
+                     <i class="fa-solid fa-forward-step mini-icon-lg" @onclick="NextTrack"></i>
+                 </div>
+                 
+                 <i class="fa-solid fa-list-ul mini-icon" @onclick='() => OpenModal("Playlists")'></i>
+            </div>
+        </div>
+    </div>
+}
+else 
+{
+    <div class="app-container">
+    <div class="top-area">
+        <!-- Playlist Sidebar -->
+        <div class="mobile-overlay @(IsMobileMenuOpen ? "active" : "")" @onclick="CloseMobileMenu"></div>
+        <div class="playlist-sidebar @(IsMobileMenuOpen ? "mobile-open" : "")">
+            <div class="playlist-header" style="display:flex; justify-content:space-between; align-items:center;">
+                Library
+                <div style="display:flex; gap:10px;">
+                    <i class="fa-solid fa-sliders" style="cursor:pointer; font-size:1rem;" @onclick='() => OpenModal("Equalizer")' title="Equalizer"></i>
+                    <i class="fa-solid fa-list" style="cursor:pointer; font-size:1rem;" @onclick='() => OpenModal("Playlists")' title="Manage Playlists"></i>
+                    <i class="fa-solid fa-gear" style="cursor:pointer; font-size:1rem;" @onclick='() => OpenModal("Settings")' title="Settings"></i>
+                    <i class="fa-solid fa-xmark mobile-menu-btn" style="cursor:pointer; font-size:1.2rem; margin-left:10px;" @onclick="CloseMobileMenu"></i>
+                </div>
+            </div>
+            
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="Search..." @bind="SearchText" @bind:event="oninput" />
+            </div>
+
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <button class="playlist-item" style="background:none; border:1px solid var(--glass-border); flex:1; text-align:center; justify-content:center; white-space:nowrap;" @onclick="PickFile">
+                    <i class="fa-solid fa-file-audio" style="margin-right: 8px;"></i> Open File
+                </button>
+            </div>
+            
+            <div class="sidebar-tabs">
+                <button class="@(ActiveTab == "Library" ? "active" : "")" @onclick='() => ActiveTab = "Library"'>Library</button>
+                <button class="@(ActiveTab == "Queue" ? "active" : "")" @onclick='() => ActiveTab = "Queue"'>Queue (@Queue.Count)</button>
+                <button class="@(ActiveTab == "Smart" ? "active" : "")" @onclick='() => ActiveTab = "Smart"'>Smart</button>
+            </div>
+
+            @if(ActiveTab == "Library")
+            {
+                <div style="flex:1; overflow-y:auto; padding-right:5px;">
+                    @foreach (var item in GetFilteredPlaylist())
+                    {
+                        <div class="playlist-item @(CurrentTrackName == item.Name ? "active" : "")">
+                            <div @onclick="() => PlayTrackWrap(item)" style="flex:1; overflow:hidden; text-overflow:ellipsis;">
+                                <i class="fa-solid fa-music" style="margin-right: 10px; font-size: 0.8rem; opacity: 0.7;"></i> 
+                                @item.Name
+                            </div>
+                            <!-- Small context menu/add to queue button -->
+                            <i class="fa-solid fa-list-ul" style="padding:5px; opacity:0.6; cursor:pointer;" @onclick="() => AddToQueue(item)" title="Add to Queue"></i>
+                        </div>
+                    }
+                </div>
+            }
+            else if (ActiveTab == "Queue")
+            {
+                 <div style="flex:1; overflow-y:auto; padding-right:5px;">
+                    @if(Queue.Count == 0)
+                    {
+                        <div style="padding:20px; text-align:center; opacity:0.6;">Queue is empty</div>
+                    }
+                    @foreach (var item in Queue)
+                    {
+                        <div class="playlist-item">
+                             <div style="flex:1; overflow:hidden;">@item.Name</div>
+                             <i class="fa-solid fa-xmark" style="cursor:pointer;" @onclick="() => RemoveFromQueue(item)"></i>
+                        </div>
+                    }
+                </div>
+            }
+            else if (ActiveTab == "Smart")
+            {
+                 <div style="padding:10px; font-weight:bold; opacity:0.8;">Most Played</div>
+                 <div style="flex:1; overflow-y:auto; padding-right:5px;">
+                    @foreach (var item in GetMostPlayed())
+                    {
+                         <div class="playlist-item" @onclick="() => PlayTrackWrap(item)">
+                             <span>@item.Name</span>
+                             <span style="font-size:0.75rem; opacity:0.6; margin-left:auto;">@item.PlayCount plays</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+             <button class="mobile-menu-btn" @onclick="ToggleMobileMenu" style="position:absolute; top:20px; left:20px; z-index:100; background:none; border:none; color:var(--text-secondary); font-size:1.5rem;">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <div class="now-playing-view">
+                <div class="album-art-container">
+                     <div class="album-art-placeholder @(IsPlaying ? "playing" : "")" style="@(CoverImageSrc != null ? $"background-image: url('{CoverImageSrc}'); background-size: cover;" : "")">
+                        @if (CoverImageSrc == null)
+                        {
+                            <i class="fa-solid fa-music"></i>
+                        }
+                    </div>
+                </div>
+               
+                <div class="track-info">
+                    <div class="track-title">@CurrentTrackName</div>
+                    <div class="track-artist">@CurrentStatus</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Controls -->
+    <div class="player-controls">
+        <div class="control-group">
+            <button class="btn-icon @(IsShuffle ? "active" : "")" @onclick="ToggleShuffle" title="Shuffle">
+                <i class="fa-solid fa-shuffle"></i>
+            </button>
+            <button class="btn-icon @(RepeatMode > 0 ? "active" : "")" @onclick="ToggleRepeat" title="Repeat">
+                <i class="fa-solid @(RepeatMode == 2 ? "fa-repeat-1" : "fa-repeat")"></i>
+            </button>
+            <button class="btn-icon" @onclick='() => OpenModal("Equalizer")' title="Equalizer">
+                <i class="fa-solid fa-sliders"></i>
+            </button>
+        </div>
+
+        <div class="control-group center">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                 <button class="btn-icon" @onclick="() => SeekRelative(-10)" title="-10s"><i class="fa-solid fa-rotate-left"></i></button>
+                <button class="btn-icon" @onclick="PrevTrack"><i class="fa-solid fa-backward-step"></i></button>
+                
+                <button class="btn-play btn-icon" @onclick="TogglePlay">
+                    <i class="fa-solid @(IsPlaying ? "fa-pause" : "fa-play")" style="margin-left: @(IsPlaying ? "0" : "4px");"></i>
+                </button>
+                
+                <button class="btn-icon" @onclick="NextTrack"><i class="fa-solid fa-forward-step"></i></button>
+                <button class="btn-icon" @onclick="() => SeekRelative(10)" title="+10s"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            
+            <div class="seek-bar-container" style="position: relative;">
+                 <!-- Visualizer Canvas -->
+                 <canvas id="visualizer" width="500" height="40" style="position: absolute; bottom: 8px; left: 0; width: 100%; height: 40px; pointer-events: none; opacity: 0.5; z-index: 0;"></canvas>
+                
+                <!-- Seek Tooltip -->
+                <div class="seek-tooltip" style="left: @(SeekHoverPercent)%">@FormatTime(SeekHoverTime)</div>
+                
+                <span class="time-text">@FormatTime(CurrentTime)</span>
+                <input type="range" class="playback-slider" min="0" max="@Duration" value="@CurrentTime" @oninput="Seek" style="z-index: 1;" />
+                <span class="time-text">@FormatTime(Duration)</span>
+            </div>
+        </div>
+
+        <div class="control-group right">
+            <div class="volume-container">
+                <button class="btn-icon" @onclick="ToggleMute" style="padding: 5px;">
+                    <i class="fa-solid @(IsMuted ? "fa-volume-mute" : "fa-volume-high")"></i>
+                </button>
+                <input type="range" min="0" max="100" value="@Volume" @oninput="SetVolume" />
+                <span style="font-size:0.8rem; font-weight:600; color:var(--text-primary); width:35px; text-align:right;">@((int)Volume)%</span>
+            </div>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    private bool IsPlaying = false;
+    private bool IsMuted = false;
+    private bool IsDragging = false;
+    private bool IsLightTheme = false;
+    private bool IsShuffle = false;
+    private bool IsMiniMode = false;
+    private bool IsMobileMenuOpen = false;
+    
+    // Modal State
+    private string? ActiveModal = null; // "Settings", "Equalizer", or null
+    private string ActiveModalTitle => ActiveModal ?? "";
+    
+    // EQ State
+    private double[] EqBands = new double[10]; // 0 defaults
+    private readonly string[] EqLabels = { "60", "170", "310", "600", "1k", "3k", "6k", "12k", "14k", "16k" };
+    
+    // UI State
+    private string ActiveTab = "Library"; // Library, Queue, Smart
+    
+    private void AddToQueue(TrackItem item) {
+        Queue.Add(item);
+    }
+    
+    private void RemoveFromQueue(TrackItem item) {
+        Queue.Remove(item);
+    }
+    
+    private IEnumerable<TrackItem> GetMostPlayed() {
+        return FullPlaylist.OrderByDescending(t => TrackStats.ContainsKey(t.Path) ? TrackStats[t.Path].Count : 0).Take(20);
+    }
+    
+    // Seek Tooltip
+    private double SeekHoverTime = 0;
+    private double SeekHoverPercent = 0;
+
+    private int RepeatMode = 0;
+    private string SearchText = "";
+    private string CurrentTrackName = "No Song Playing";
+    private string CurrentTrackPath = "";
+    private string CurrentStatus = "Select a file to begin";
+    private double CurrentTime = 0;
+    private double Duration = 100;
+    private double Volume = 100;
+    
+    private class TrackItem {
+        public string Name { get; set; } = "";
+        public string Path { get; set; } = "";
+        public string Artist { get; set; } = "Unknown";
+        public string Album { get; set; } = "Unknown";
+        public string DurationStr { get; set; } = "";
+        public FileResult? File { get; set; }
+        public int PlayCount { get; set; } = 0;
+        public DateTime LastPlayed { get; set; }
+    }
+    
+    private List<TrackItem> FullPlaylist = new();
+    private List<TrackItem> Queue = new(); // Explicit Queue
+    
+    // Smart Stats
+    private Dictionary<string, (int Count, DateTime Last)> TrackStats = new();
+    
+    private IEnumerable<TrackItem> GetFilteredPlaylist()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return FullPlaylist;
+        return FullPlaylist.Where(t => t.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
+    }
+    
+    private string? CoverImageSrc;
+    private DotNetObjectReference<Home>? _dotNetRef;
+    
+    // Intro State Fields - Removed
+
+    private string DebugStatus = "Ready";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("window.player.initialize", _dotNetRef);
+        await JS.InvokeVoidAsync("window.player.initDragDrop", null); 
+        await JS.InvokeVoidAsync("window.player.initShortcuts", _dotNetRef);
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(firstRender)
+        {
+            await LoadPlaylist();
+            await LoadStats();
+            await InitTooltip();
+            StateHasChanged();
+        }
+    }
+
+    // --- Modal Actions ---
+    // Moved to bottom with Playlist logic
+    
+    // --- EQ Actions ---
+    private async Task UpdateEq(int index, ChangeEventArgs e)
+    {
+        if(double.TryParse(e.Value?.ToString(), out double val))
+        {
+            EqBands[index] = val;
+            await JS.InvokeVoidAsync("window.player.setEqGain", index, val);
+        }
+    }
+    
+    private async Task ResetEq()
+    {
+        for(int i=0; i<EqBands.Length; i++)
+        {
+            EqBands[i] = 0;
+            await JS.InvokeVoidAsync("window.player.setEqGain", i, 0);
+        }
+    }
+    
+    private string GetEqLabel(int index) => EqLabels.Length > index ? EqLabels[index] : "";
+    
+    // --- Seek Hover ---
+    private class HoverResult { public double Time { get; set; } public double Percent { get; set; } }
+
+    private void OnSeekHover(MouseEventArgs e)
+    {
+         // Client-side tooltip logic handles this via JS
+    }
+    
+    // Quick JS for tooltip
+    private async Task InitTooltip()
+    {
+        // We will call a JS function that attaches the mousemove listener
+        await JS.InvokeVoidAsync("eval", @"
+            const container = document.querySelector('.seek-bar-container');
+            const tooltip = document.querySelector('.seek-tooltip');
+            const input = document.querySelector('input[type=range]');
+            
+            container.addEventListener('mousemove', (e) => {
+                 const rect = container.getBoundingClientRect();
+                 const x = e.clientX - rect.left;
+                 const percent = x / rect.width;
+                 const max = parseFloat(input.max);
+                 const time = percent * max;
+                 
+                 // Format time
+                 const m = Math.floor(time / 60);
+                 const s = Math.floor(time % 60);
+                 tooltip.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+                 tooltip.style.left = (percent * 100) + '%';
+            });
+        ");
+    }
+
+    // --- Theme & Mini Mode ---
+    private async Task ToggleTheme()
+    {
+        IsLightTheme = !IsLightTheme;
+        if(IsLightTheme)
+            await JS.InvokeVoidAsync("eval", "document.body.classList.add('light-theme')");
+        else 
+            await JS.InvokeVoidAsync("eval", "document.body.classList.remove('light-theme')");
+    }
+    
+    private async Task ToggleMiniMode()
+    {
+        IsMiniMode = !IsMiniMode;
+        if(IsMiniMode) {
+            await JS.InvokeVoidAsync("eval", "document.body.classList.add('mini-mode')");
+            // Resize Window
+            if (Application.Current?.Windows.FirstOrDefault() is Window window)
+            {
+                window.Width = 450;
+                window.Height = 450;
+            }
+        }
+        else {
+            await JS.InvokeVoidAsync("eval", "document.body.classList.remove('mini-mode')");
+            // Restore Window (Standard HD size roughly or previous?)
+            if (Application.Current?.Windows.FirstOrDefault() is Window window)
+            {
+                window.Width = 1200;
+                window.Height = 800;
+            }
+        }
+    }
+
+    private void ToggleShuffle() => IsShuffle = !IsShuffle;
+    
+    private void ToggleRepeat()
+    {
+        RepeatMode++;
+        if (RepeatMode > 2) RepeatMode = 0;
+    }
+    
+    // ... File Picking & Playback (Same as before) ... 
+    
+    private async Task PickFile()
+    {
+        try
+        {
+            var results = await FilePicker.Default.PickMultipleAsync(new PickOptions
+            {
+                PickerTitle = "Select Audio Files",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.WinUI, new[] { ".mp3", ".wav", ".flac", ".aac", ".opus", ".m4a" } },
+                    { DevicePlatform.Android, new[] { "audio/*" } },
+                    { DevicePlatform.iOS, new[] { "public.audio" } }
+                })
+            });
+
+            if (results != null && results.Any())
+            {
+                bool first = true;
+                foreach (var result in results)
+                {
+                    var track = new TrackItem { Name = result.FileName, Path = result.FullPath, File = result };
+                    if(!FullPlaylist.Any(p => p.Path == track.Path)) FullPlaylist.Add(track);
+                    
+                    if (first) 
+                    {
+                        await PlayTrackWrap(track);
+                        first = false;
+                    }
+                }
+                await SavePlaylist();
+            }
+        }
+        catch (Exception ex)
+        {
+            CurrentStatus = $"Error: {ex.Message}";
+        }
+    }
+    
+     private async Task PlayTrackWrap(TrackItem track, bool addToPlaylist = true)
+    {
+         if(addToPlaylist && !FullPlaylist.Any(p => p.Path == track.Path)) FullPlaylist.Add(track);
+         if(addToPlaylist) await SavePlaylist(); // Save if modified
+         if(addToPlaylist) await SaveStats();
+         
+         // Update Stats
+         if(TrackStats.ContainsKey(track.Path))
+         {
+             var stat = TrackStats[track.Path];
+             stat.Count++;
+             stat.Last = DateTime.Now;
+             TrackStats[track.Path] = stat;
+         }
+         else
+         {
+             TrackStats[track.Path] = (1, DateTime.Now);
+         }
+         
+         CurrentTrackPath = track.Path;
+         await PlayTrackPath(track.Path, track.File);
+    }
+
+    private async Task PlayTrackPath(string path, FileResult? file = null)
+    {
+        try 
+        {
+            CurrentTrackName = Path.GetFileName(path);
+            CurrentStatus = "Loading...";
+            StateHasChanged();
+
+            DotNetStreamReference streamRef;
+            if(file != null) 
+            {
+                var stream = await file.OpenReadAsync();
+                streamRef = new DotNetStreamReference(stream);
+            }
+            else 
+            {
+                 if(!File.Exists(path)) { CurrentStatus = "File not found"; return; }
+                 var stream = File.OpenRead(path);
+                 streamRef = new DotNetStreamReference(stream);
+            }
+
+            await StartPlayback(streamRef);
+        } 
+        catch (Exception ex) 
+        {
+             CurrentStatus = "Error: " + ex.Message;
+        }
+    }
+    
+    private async Task StartPlayback(DotNetStreamReference streamRef)
+    {
+         await JS.InvokeVoidAsync("window.player.playFromStream", streamRef);
+         await JS.InvokeVoidAsync("eval", "window.player.initVisualizer(document.getElementById('visualizer'))");
+         // Apply current EQ
+          for(int i=0; i<EqBands.Length; i++) {
+             if(EqBands[i] != 0) await JS.InvokeVoidAsync("window.player.setEqGain", i, EqBands[i]);
+          }
+         
+         IsPlaying = true;
+         CurrentStatus = "Playing";
+    }
+    
+     // ... Standard Controls ...
+     
+    [JSInvokable]
+    public async Task TogglePlay()
+    {
+        if (IsPlaying)
+        {
+            await JS.InvokeVoidAsync("window.player.pause");
+            IsPlaying = false;
+        }
+        else
+        {
+             await JS.InvokeVoidAsync("window.player.play");
+             IsPlaying = true;
+        }
+        StateHasChanged();
+    }
+    
+    [JSInvokable]
+    public async Task SeekRelative(double amount)
+    {
+        var newTime = CurrentTime + amount;
+        if (newTime < 0) newTime = 0;
+        if (newTime > Duration) newTime = Duration;
+        CurrentTime = newTime;
+        await JS.InvokeVoidAsync("window.player.seek", newTime);
+        StateHasChanged();
+    }
+    
+    [JSInvokable]
+    public async Task NextTrack() { 
+        // 1. Check Queue
+        if(Queue.Any())
+        {
+            var next = Queue.First();
+            Queue.RemoveAt(0);
+            await PlayTrackWrap(next, false); // Don't re-add to playlist if just playing
+            return;
+        }
+
+        // 2. Playlist Order
+        int currentIndex = FullPlaylist.FindIndex(t => t.Path == CurrentTrackPath); // Utilize a tracked path property if Name isn't unique enough, but Name ok for now
+        // NOTE: We need to track CurrentTrackPath to be safe
+        if(currentIndex == -1) currentIndex = FullPlaylist.FindIndex(t => t.Name == CurrentTrackName);
+        
+        if(currentIndex != -1 && currentIndex < FullPlaylist.Count - 1) {
+             await PlayTrackWrap(FullPlaylist[currentIndex + 1]);
+        }
+    }
+     
+    [JSInvokable]
+    public async Task PrevTrack() {
+         int currentIndex = FullPlaylist.FindIndex(t => t.Name == CurrentTrackName);
+        if(currentIndex > 0) {
+             await PlayTrackWrap(FullPlaylist[currentIndex - 1]);
+        }
+    }
+    
+     [JSInvokable] 
+    public async Task VolumeRelative(double amount) {
+         Volume = Math.Clamp(Volume + amount, 0, 100);
+         await JS.InvokeVoidAsync("window.player.setVolume", Volume);
+         IsMuted = Volume == 0;
+         StateHasChanged();
+    }
+    
+    private async Task Seek(ChangeEventArgs e)
+    {
+        IsDragging = true;
+        if (double.TryParse(e.Value?.ToString(), out double time))
+        {
+            CurrentTime = time;
+            await JS.InvokeVoidAsync("window.player.seek", time);
+        }
+        IsDragging = false;
+    }
+    
+    private async Task SetVolume(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double vol))
+        {
+            Volume = vol;
+            await JS.InvokeVoidAsync("window.player.setVolume", vol);
+            IsMuted = vol == 0;
+        }
+    }
+    
+    [JSInvokable]
+    public async Task ToggleMute()
+    {
+        IsMuted = !IsMuted;
+        await JS.InvokeVoidAsync("window.player.setVolume", IsMuted ? 0 : Volume);
+        StateHasChanged();
+    }
+    
+    // ... JS Callbacks ... 
+    
+    [JSInvokable]
+    public async Task OnTrackDropped(string name, string blobUrl)
+    {
+        CurrentTrackName = name;
+        CurrentStatus = "Playing (Streamed)";
+        IsPlaying = true;
+        
+         // Add to playlist too if not exists
+         if(!FullPlaylist.Any(p => p.Name == name)) // Check by name for drops
+         {
+             FullPlaylist.Add(new TrackItem { Name = name, Path = blobUrl });
+         }
+         
+        await JS.InvokeVoidAsync("eval", "window.player.initVisualizer(document.getElementById('visualizer'))");
+        StateHasChanged();
+    }
+    
+    [JSInvokable]
+    public void OnTrackAdded(string name, string blobUrl)
+    {
+        if(!FullPlaylist.Any(p => p.Name == name))
+        {
+            FullPlaylist.Add(new TrackItem { Name = name, Path = blobUrl });
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnTimeUpdate(double currentTime, double duration)
+    {
+        if (!IsDragging)
+        {
+            CurrentTime = currentTime;
+            if (duration > 0) Duration = duration;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnTrackEnded()
+    {
+        if(RepeatMode == 2) // One
+        {
+             _ = JS.InvokeVoidAsync("window.player.seek", 0);
+             _ = JS.InvokeVoidAsync("window.player.play");
+             return;
+        }
+    
+        NextTrack().FireAndForgetSafeAsync();
+    
+        IsPlaying = false;
+        CurrentStatus = "Finished";
+        StateHasChanged();
+    }
+    
+    [JSInvokable]
+    public void OnMetadataRead(string? title, string? artist, string? coverBase64, string? album, string? year, string? genre)
+    {
+        if(!string.IsNullOrEmpty(title)) CurrentTrackName = title;
+        if(!string.IsNullOrEmpty(artist)) CurrentStatus = artist; // Use artist as main status line
+        // We could store Album/Year/Genre in current track item to display in details
+        if(CurrentTrackPath != "" && FullPlaylist.Any(t => t.Path == CurrentTrackPath)) {
+            var t = FullPlaylist.First(t => t.Path == CurrentTrackPath);
+            t.Artist = artist ?? "Unknown";
+            t.Album = album ?? "Unknown";
+            // Update UI text
+            CurrentStatus = $"{t.Artist} • {t.Album} {(string.IsNullOrEmpty(year) ? "" : $"({year})")}";
+        }
+        
+        CoverImageSrc = !string.IsNullOrEmpty(coverBase64) ? coverBase64 : null;
+        StateHasChanged();
+    }
+
+    private async Task SavePlaylist()
+    {
+        try
+        {
+            var paths = FullPlaylist.Select(p => p.Path).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(paths);
+            var path = Path.Combine(FileSystem.AppDataDirectory, "playlist.json");
+            await File.WriteAllTextAsync(path, json);
+        }
+        catch { }
+    }
+
+    private async Task LoadPlaylist()
+    {
+        try
+        {
+            var path = Path.Combine(FileSystem.AppDataDirectory, "playlist.json");
+            if (File.Exists(path))
+            {
+                var json = await File.ReadAllTextAsync(path);
+                var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                if (paths != null)
+                {
+                    FullPlaylist.Clear();
+                    foreach(var p in paths)
+                    {
+                        FullPlaylist.Add(new TrackItem { Name = Path.GetFileName(p), Path = p });
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
+    private string FormatTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds)) return "0:00";
+        var ts = TimeSpan.FromSeconds(seconds);
+        return $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
+    }
+
+    // Playlist Management
+    private string NewPlaylistName = "";
+    private List<string> SavedPlaylists = new();
+
+
+    
+    private async Task OpenModal(string name) 
+    {
+        ActiveModal = name;
+        // Close mobile menu if opening a modal to avoid clutter (optional)
+        IsMobileMenuOpen = false;
+        if(name == "Playlists") await RefreshSavedPlaylists();
+    }
+    
+    private void CloseModal() => ActiveModal = null;
+    
+    private void ToggleMobileMenu() => IsMobileMenuOpen = !IsMobileMenuOpen;
+    private void CloseMobileMenu() => IsMobileMenuOpen = false;
+
+    private async Task RefreshSavedPlaylists()
+    {
+        await Task.Yield();
+        SavedPlaylists.Clear();
+        var dir = FileSystem.AppDataDirectory;
+        var files = Directory.GetFiles(dir, "*.playlist.json");
+        foreach(var f in files)
+        {
+            var name = Path.GetFileName(f).Replace(".playlist.json", "");
+            if(name != "playlist") SavedPlaylists.Add(name); // Exclude auto-save
+        }
+    }
+    
+    private async Task SaveCurrentPlaylist()
+    {
+        if(string.IsNullOrWhiteSpace(NewPlaylistName)) return;
+        try {
+            var paths = FullPlaylist.Select(p => p.Path).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(paths);
+            var path = Path.Combine(FileSystem.AppDataDirectory, $"{NewPlaylistName}.playlist.json");
+            await File.WriteAllTextAsync(path, json);
+            NewPlaylistName = "";
+            await RefreshSavedPlaylists();
+        } catch {}
+    }
+    
+    private async Task LoadNamedPlaylist(string name)
+    {
+        try {
+             var path = Path.Combine(FileSystem.AppDataDirectory, $"{name}.playlist.json");
+             if(File.Exists(path)) {
+                 var json = await File.ReadAllTextAsync(path);
+                 var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                 if(paths != null) {
+                     FullPlaylist.Clear(); // Replace or Append? User likely expects replace or we ask. Assume Replace.
+                     foreach(var p in paths) FullPlaylist.Add(new TrackItem { Name = Path.GetFileName(p), Path = p });
+                     await SavePlaylist(); // Update auto-save
+                     CloseModal();
+                 }
+             }
+             else {
+                 await Task.CompletedTask; // Satisfy async if no file found (though File.Exists check handles most)
+             }
+        } catch {}
+    }
+    
+    private async Task DeletePlaylist(string name)
+    {
+         try {
+             var path = Path.Combine(FileSystem.AppDataDirectory, $"{name}.playlist.json");
+             if(File.Exists(path)) File.Delete(path);
+             await RefreshSavedPlaylists();
+         } catch {}
+    }
+    
+    private async Task SaveStats()
+    {
+        try {
+            var json = System.Text.Json.JsonSerializer.Serialize(TrackStats);
+            var path = Path.Combine(FileSystem.AppDataDirectory, "stats.json");
+            await File.WriteAllTextAsync(path, json);
+        } catch {}
+    }
+
+    private async Task LoadStats()
+    {
+        try {
+            var path = Path.Combine(FileSystem.AppDataDirectory, "stats.json");
+            if(File.Exists(path)) {
+                var json = await File.ReadAllTextAsync(path);
+                var stats = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, (int Count, DateTime Last)>>(json);
+                if(stats != null) TrackStats = stats;
+            }
+        } catch {}
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+}
+
+
+
